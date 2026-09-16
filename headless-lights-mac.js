@@ -395,19 +395,14 @@ export function DiscoveryService() {
 				firmwareVersion: "1.0.0",
 			};
 			const existing = service.getController(value.id);
-			if (existing === undefined) {
-				service.addController(new MacBridgeController(value));
-			} else {
-				// Controllers survive SignalRGB restarts, but device engine threads
-				// do not. Updating a persisted controller is not enough: it must be
-				// announced again so SignalRGB recreates the device and calls
-				// Initialize()/Render().
-				existing.updateWithValue(value);
-				existing.connected = true;
-				existing.deviceCreated = true;
-				service.updateController(existing);
-				service.announceController(existing);
+			if (existing !== undefined) {
+				// Controllers survive app restarts, but their device engine threads
+				// do not. Reusing the persisted object does not recreate an engine in
+				// SignalRGB 2.5. Remove it and follow the same fresh-registration path
+				// that works on first install.
+				service.removeController(existing);
 			}
+			service.addController(new MacBridgeController(value));
 		}
 	};
 }
