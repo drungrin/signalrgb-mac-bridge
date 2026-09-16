@@ -32,6 +32,18 @@ param(
 $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $bridgeScript = Join-Path $scriptDir 'signalrgb-mac-bridge.py'
+$logDir = Join-Path $env:LOCALAPPDATA 'headless-lights'
+$supervisorLog = Join-Path $logDir 'transport-supervisor.log'
+$bridgeLog = Join-Path $logDir 'signalrgb-bridge.log'
+$bridgeErrorLog = Join-Path $logDir 'signalrgb-bridge.error.log'
+$sshErrorLog = Join-Path $logDir 'ssh.error.log'
+New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+function Write-Status([string] $Message) {
+    $line = "$(Get-Date -Format s) $Message"
+    Add-Content -Path $supervisorLog -Value $line -Encoding UTF8
+    Write-Host $line
+}
 
 if (-not (Test-Path $bridgeScript)) {
     throw "missing UDP-to-TCP bridge: $bridgeScript"
@@ -64,8 +76,8 @@ $bridgeArguments = @(
     '--upstream-port', [string] $Port
 )
 
-Write-Host "SignalRGB UDP 127.0.0.1:${Port} -> TCP/SSH -> ${MacHost}:127.0.0.1:${Port}"
-Write-Host 'Ctrl+C to stop both processes.'
+Write-Status "SignalRGB UDP 127.0.0.1:${Port} -> TCP/SSH -> ${MacHost}:127.0.0.1:${Port}"
+Write-Status 'supervisor started; Ctrl+C stops both child processes'
 
 $bridge = $null
 $tunnel = $null
@@ -73,27 +85,29 @@ try {
     while ($true) {
         if ($null -eq $tunnel -or $tunnel.HasExited) {
             if ($null -ne $tunnel) {
-                Write-Host "ssh exited with $($tunnel.ExitCode); restarting"
+                Write-Status "ssh exited with $($tunnel.ExitCode); restarting"
                 $tunnel.Dispose()
             }
             $tunnel = Start-Process -FilePath $ssh -ArgumentList $sshArguments `
-                -NoNewWindow -PassThru
-            Write-Host "ssh tunnel started (pid $($tunnel.Id))"
+                -NoNewWindow -RedirectStandardError $sshErrorLog -PassThru
+            Write-Status "ssh tunnel started (pid $($tunnel.Id))"
         }
 
         if ($null -eq $bridge -or $bridge.HasExited) {
             if ($null -ne $bridge) {
-                Write-Host "UDP bridge exited with $($bridge.ExitCode); restarting"
+                Write-Status "UDP bridge exited with $($bridge.ExitCode); restarting"
                 $bridge.Dispose()
             }
             $bridge = Start-Process -FilePath $python -ArgumentList $bridgeArguments `
-                -NoNewWindow -PassThru
-            Write-Host "UDP bridge started (pid $($bridge.Id))"
+                -NoNewWindow -RedirectStandardOutput $bridgeLog `
+                -RedirectStandardError $bridgeErrorLog -PassThru
+            Write-Status "UDP bridge started (pid $($bridge.Id))"
         }
 
         Start-Sleep -Seconds $RetrySeconds
     }
 } finally {
+    Write-Status 'supervisor stopping child processes'
     foreach ($process in @($bridge, $tunnel)) {
         if ($null -ne $process -and -not $process.HasExited) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
