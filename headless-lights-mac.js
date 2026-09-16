@@ -26,12 +26,11 @@ export function Publisher() { return "headless-lights"; }
 export function Size() { return [22, 9]; }
 export function DefaultPosition() { return [0, 0]; }
 export function DefaultScale() { return 1.0; }
-export function DeviceType() {
-	if (typeof controller !== "undefined" && DEVICES[controller.model]) {
-		return DEVICES[controller.model].deviceType;
-	}
-	return "other";
-}
+// One network service file serves four device classes. SignalRGB queries this
+// export before controller.model is available, so it cannot vary per controller;
+// "other" is accurate for the mixed service. Each device still gets its own
+// geometry and LED map in Initialize().
+export function DeviceType() { return "other"; }
 
 /* global
 controller:readonly
