@@ -416,11 +416,13 @@ export function DiscoveryService() {
 				// that works on first install.
 				service.removeController(existing);
 			}
-			// Registration and announcement must happen in separate service ticks.
-			// SignalRGB 2.5 does not create an engine when a freshly added network
-			// controller is announced synchronously inside Initialize(). Update()
-			// calls announce() on the next discovery tick.
-			service.addController(new MacBridgeController(value));
+			// Register first, then follow the bundled WLED bridge's save/update/
+			// announce lifecycle. The discovery service receives only its startup
+			// Update in SignalRGB 2.5 for this deterministic service, so waiting for
+			// another tick leaves the object persisted but never creates an engine.
+			const created = new MacBridgeController(value);
+			service.addController(created);
+			created.announce();
 		}
 	};
 }
