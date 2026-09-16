@@ -191,7 +191,13 @@ export function Initialize() {
 		return;
 	}
 
-	device.setName(config.name);
+	// Make transport injection failures visible on the device card. The
+	// SignalRGB 2.5 type definitions do not document TCP even though the engine
+	// contains a factory, so this is more actionable than a console-only log.
+	const tcpStatus = typeof tcp === "undefined"
+		? "tcp undefined"
+		: (typeof tcp.createSocket === "function" ? "tcp ready" : "tcp no factory");
+	device.setName(`${config.name} [${tcpStatus}]`);
 	device.setSize(config.size);
 	device.setControllableLeds(config.ledNames, config.ledPositions);
 	if (typeof device.setImageFromUrl === "function" && config.image) {
