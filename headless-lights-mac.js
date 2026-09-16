@@ -184,6 +184,7 @@ export function LedNames() { return K70_LED_NAMES; }
 export function LedPositions() { return K70_LED_POSITIONS; }
 
 export function Initialize() {
+	device.log(`headless-lights: Initialize model=${controller.model}`);
 	config = DEVICES[controller.model];
 	if (config === undefined) {
 		device.log(`unknown controller model "${controller.model}"`);
@@ -205,7 +206,9 @@ export function Initialize() {
 	// The newer @SignalRGB/tcp import documented upstream is not resolvable in
 	// 2.5.74, where it is treated as a relative file path. Enabling the feature
 	// installs the legacy global `tcp` used below.
+	device.log("headless-lights: enabling tcp feature");
 	device.addFeature("tcp");
+	device.log("headless-lights: tcp feature enabled; opening socket");
 	openSocket();
 }
 
@@ -402,7 +405,11 @@ export function DiscoveryService() {
 				// that works on first install.
 				service.removeController(existing);
 			}
-			service.addController(new MacBridgeController(value));
+			const created = new MacBridgeController(value);
+			service.addController(created);
+			// These controllers are deterministic and always reachable through
+			// loopback, so announce synchronously instead of waiting for Update().
+			created.announce();
 		}
 	};
 }
@@ -432,6 +439,9 @@ class MacBridgeController {
 	}
 
 	announce() {
+		if (this.deviceCreated) {
+			return;
+		}
 		this.deviceCreated = true;
 		service.updateController(this);
 		service.announceController(this);
