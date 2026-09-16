@@ -32,7 +32,7 @@ export function DeviceType() { return "keyboard"; }
 controller:readonly
 device:readonly
 service:readonly
-tcp:readonly
+udp:readonly
 LightingMode:readonly
 forcedColor:readonly
 */
@@ -174,11 +174,8 @@ const DEVICES = {
 	},
 };
 
-let socket = null;
 let config = null;
 let lastSendAt = 0;
-let nextConnectAt = 0;
-let loggedDisconnect = false;
 
 export function LedNames() { return K70_LED_NAMES; }
 export function LedPositions() { return K70_LED_POSITIONS; }
@@ -191,13 +188,7 @@ export function Initialize() {
 		return;
 	}
 
-	// Make transport injection failures visible on the device card. The
-	// SignalRGB 2.5 type definitions do not document TCP even though the engine
-	// contains a factory, so this is more actionable than a console-only log.
-	const tcpStatus = typeof tcp === "undefined"
-		? "tcp undefined"
-		: (typeof tcp.createSocket === "function" ? "tcp ready" : "tcp no factory");
-	device.setName(`${config.name} [${tcpStatus}]`);
+	device.setName(config.name);
 	device.setSize(config.size);
 	device.setControllableLeds(config.ledNames, config.ledPositions);
 	if (typeof device.setImageFromUrl === "function" && config.image) {
@@ -205,27 +196,18 @@ export function Initialize() {
 	}
 
 	lastSendAt = 0;
-	nextConnectAt = 0;
-	loggedDisconnect = false;
 
-	// SignalRGB 2.5.x exposes socket factories through opt-in device features.
-	// The newer @SignalRGB/tcp import documented upstream is not resolvable in
-	// 2.5.74, where it is treated as a relative file path. Enabling the feature
-	// installs the legacy global `tcp` used below.
-	device.log("headless-lights: enabling tcp feature");
-	device.addFeature("tcp");
-	device.log("headless-lights: tcp feature enabled; opening socket");
-	openSocket();
+	// SignalRGB 2.5.74 contains an internal TCP factory but does not expose it
+	// to plugins: the global is undefined and @SignalRGB/tcp is not resolvable.
+	// UDP is a supported device feature, so send to a loopback bridge which
+	// forwards the unchanged frame into the TCP SSH tunnel to the Mac.
+	device.addFeature("udp");
 }
 
 export function Render() {
 	if (config === null) {
 		return;
 	}
-	if (!ensureConnected()) {
-		return;
-	}
-
 	// The agent paces writes anyway; there is no point pushing 60fps of every
 	// device through the tunnel.
 	const now = Date.now();
@@ -234,86 +216,16 @@ export function Render() {
 	}
 	lastSendAt = now;
 
-	try {
-		socket.send(buildFrame(config, readCanvas(config)));
-	} catch (error) {
-		device.log(`send failed: ${error}`);
-		closeSocket();
-	}
+	// Same binary frame as the Mac consumes over TCP. UDP preserves packet
+	// bytes and boundaries on loopback; the local bridge unwraps it into the
+	// SSH-forwarded TCP stream.
+	udp.send(STREAM_HOST, STREAM_PORT, buildFrame(config, readCanvas(config)), false);
 }
 
 export function Shutdown() {
-	// Deliberately no black frame: letting the agent's 3s timeout lapse hands
-	// the devices back to the Mac's own effect, which is what should happen when
-	// SignalRGB goes away.
-	closeSocket();
+	// Deliberately no black frame: when datagrams stop, the agent's 3s timeout
+	// hands the devices back to the Mac's own effect.
 	config = null;
-}
-
-function openSocket() {
-	if (typeof tcp === "undefined") {
-		device.log("this SignalRGB build has no tcp module");
-		return false;
-	}
-	try {
-		socket = tcp.createSocket();
-		socket.on("error", function (error) {
-			device.log(`socket error: ${error}`);
-			closeSocket();
-		});
-		socket.on("disconnected", function () {
-			closeSocket();
-		});
-		socket.connect(STREAM_HOST, STREAM_PORT);
-		return true;
-	} catch (error) {
-		device.log(`could not open the stream socket: ${error}`);
-		socket = null;
-		return false;
-	}
-}
-
-function closeSocket() {
-	if (socket !== null) {
-		try {
-			socket.close();
-		} catch (error) {
-			// Already gone; nothing useful to do.
-		}
-		socket = null;
-	}
-	nextConnectAt = Date.now() + RECONNECT_DELAY;
-}
-
-function ensureConnected() {
-	if (socket !== null && isConnected()) {
-		if (loggedDisconnect) {
-			device.log("stream reconnected");
-			loggedDisconnect = false;
-		}
-		return true;
-	}
-	if (!loggedDisconnect) {
-		device.log(`stream down; is the SSH tunnel to ${STREAM_PORT} up?`);
-		loggedDisconnect = true;
-	}
-	if (Date.now() < nextConnectAt) {
-		return false;
-	}
-	nextConnectAt = Date.now() + RECONNECT_DELAY;
-	if (socket === null) {
-		openSocket();
-	}
-	return socket !== null && isConnected();
-}
-
-function isConnected() {
-	// Builds differ on whether the "connected" event fires for loopback, so
-	// trust the state enum when it is available.
-	if (typeof socket.state === "number" && typeof socket.ConnectedState === "number") {
-		return socket.state === socket.ConnectedState;
-	}
-	return true;
 }
 
 // Returns one [r,g,b] per wire slot, black for slots with no physical LED.

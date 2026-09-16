@@ -18,12 +18,16 @@ real key geometry, so per-key effects work as they would on a local device.
 ## How it works
 
 The Mac agent listens only on `127.0.0.1`, so nothing is exposed on the network.
-The PC reaches it through an SSH tunnel, and this add-on connects to the local
-end of that tunnel:
+The PC reaches it through an SSH tunnel. SignalRGB 2.5 exposes UDP, but not
+TCP, to third-party device plugins, so a tiny loopback bridge forwards the
+unchanged binary frames into the tunnel:
 
 ```
-SignalRGB  ->  127.0.0.1:7532  ==SSH==>  Mac agent  ->  HID  ->  peripherals
+SignalRGB --UDP 7532--> local bridge --TCP 7532/SSH--> Mac agent --> HID
 ```
+
+No port is exposed on the LAN: both Windows endpoints bind to `127.0.0.1`, and
+SSH is the authentication boundary.
 
 Frames are plain binary: a 6-byte header (`SG`, version, device id, little-endian
 payload length) followed by RGB triples. The agent coalesces to the newest frame
@@ -35,14 +39,16 @@ sleeps or SignalRGB closes.
 
 1. The Mac agent installed and running. It lives in the `mac-agent/` directory
    of [headless-rgb](https://github.com/drungrin/headless-rgb).
-2. An SSH tunnel from the PC to the Mac, forwarding port 7532:
+2. Python 3.11+ on Windows.
+3. The two Windows helpers running:
 
-   ```
-   ssh -N -L 7532:127.0.0.1:7532 mac
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File windows\start-mac-tunnel.ps1
+   python windows\signalrgb-mac-bridge.py
    ```
 
-   `headless-rgb` ships `windows/start-mac-tunnel.ps1`, which keeps the tunnel
-   up and reconnects when it drops.
+   The first keeps the SSH TCP forward alive; the second receives SignalRGB
+   datagrams on UDP loopback and forwards them to that TCP tunnel.
 
 ## Install
 
