@@ -424,10 +424,11 @@ export function DiscoveryService() {
 
 class MacBridgeController {
 	constructor(value) {
+		// Match SignalRGB's own WLED lifecycle: do not call updateController
+		// before addController has registered this object.
 		this.updateWithValue(value);
-		this.connected = true;
-		this.deviceCreated = false;
-		service.updateController(this);
+		this.connected = false;
+		this.announced = false;
 	}
 
 	updateWithValue(value) {
@@ -441,18 +442,24 @@ class MacBridgeController {
 	}
 
 	update() {
-		if (!this.deviceCreated) {
+		if (!this.announced) {
 			this.announce();
 		}
 	}
 
 	announce() {
-		if (this.deviceCreated) {
+		if (this.announced) {
 			return;
 		}
-		this.deviceCreated = true;
+		// The official WLED bridge persists these two fields before announcing a
+		// freshly discovered network controller. Follow that exact path.
+		service.saveSetting(this.id, "name", this.name);
+		service.saveSetting(this.id, "ip", this.ip);
 		service.updateController(this);
 		service.announceController(this);
+		this.connected = true;
+		this.announced = true;
+		service.updateController(this);
 	}
 }
 
