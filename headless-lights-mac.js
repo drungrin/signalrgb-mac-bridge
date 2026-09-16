@@ -26,7 +26,12 @@ export function Publisher() { return "headless-lights"; }
 export function Size() { return [22, 9]; }
 export function DefaultPosition() { return [0, 0]; }
 export function DefaultScale() { return 1.0; }
-export function DeviceType() { return "keyboard"; }
+export function DeviceType() {
+	if (typeof controller !== "undefined" && DEVICES[controller.model]) {
+		return DEVICES[controller.model].deviceType;
+	}
+	return "other";
+}
 
 /* global
 controller:readonly
@@ -124,7 +129,7 @@ const DEVICES = {
 		deviceId: 0,
 		name: "Corsair K70 MAX (Mac)",
 		deviceType: "keyboard",
-		image: "https://assets.signalrgb.com/devices/default/keyboard.png",
+		image: "default/keyboard",
 		get size() { return K70_SIZE; },
 		get ledNames() { return K70_LED_NAMES; },
 		get ledPositions() { return K70_LED_POSITIONS; },
@@ -137,7 +142,7 @@ const DEVICES = {
 		deviceId: 1,
 		name: "Corsair MM700 (Mac)",
 		deviceType: "mousepad",
-		image: "https://assets.signalrgb.com/devices/default/mousepadXL.png",
+		image: "default/mousepadXL",
 		size: [9, 3],
 		ledNames: ["Left", "Centre", "Right"],
 		ledPositions: [[0, 1], [4, 1], [8, 1]],
@@ -149,7 +154,7 @@ const DEVICES = {
 		deviceId: 2,
 		name: "Logitech G560 (Mac)",
 		deviceType: "speakers",
-		image: "https://assets.signalrgb.com/devices/default/case.png",
+		image: "default/case",
 		size: [5, 3],
 		ledNames: ["Left Front", "Left Rear", "Right Front", "Right Rear"],
 		ledPositions: [[0, 2], [0, 0], [4, 2], [4, 0]],
@@ -161,7 +166,7 @@ const DEVICES = {
 		deviceId: 3,
 		name: "Corsair Scimitar Elite Wireless SE (Mac)",
 		deviceType: "mouse",
-		image: "https://assets.signalrgb.com/devices/default/mouse.png",
+		image: "default/mouse",
 		size: [3, 5],
 		ledNames: ["Logo Zone", "Side Keys", "Status LED"],
 		ledPositions: [[2, 2], [0, 1], [2, 4]],
@@ -188,8 +193,8 @@ export function Initialize() {
 	device.setName(config.name);
 	device.setSize(config.size);
 	device.setControllableLeds(config.ledNames, config.ledPositions);
-	if (typeof device.setImageFromUrl === "function" && config.image) {
-		device.setImageFromUrl(config.image);
+	if (typeof device.setImageFromResource === "function" && config.image) {
+		device.setImageFromResource(config.image);
 	}
 
 	lastSendAt = 0;
@@ -280,7 +285,7 @@ function hexToRgb(hex) {
 }
 
 export function DiscoveryService() {
-	this.IconUrl = "https://assets.signalrgb.com/devices/default/keyboard.png";
+	this.IconUrl = "default/keyboard";
 	this.announced = false;
 
 	this.Initialize = function () {
