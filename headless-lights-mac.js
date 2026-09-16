@@ -369,8 +369,11 @@ export function DiscoveryService() {
 	this.announced = false;
 
 	this.Initialize = function () {
-		service.log("headless-lights: announcing the four Mac peripherals");
-		this.EnsureControllers();
+		// addController is not safe while SignalRGB is still constructing this
+		// discovery service: it persists the object but does not create a device
+		// engine. Official add-ons discover asynchronously, after Initialize has
+		// returned. Do the deterministic registration on the first Update tick.
+		service.log("headless-lights: waiting for first discovery update");
 	};
 
 	this.Update = function () {
