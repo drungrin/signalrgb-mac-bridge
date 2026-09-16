@@ -1,14 +1,16 @@
 <#
 .SYNOPSIS
-Keep the SSH tunnel to the Mac agent's streaming port alive.
+Keep the complete SignalRGB-to-Mac transport alive.
 
 .DESCRIPTION
-The Mac agent listens only on 127.0.0.1, so the SignalRGB plugin reaches it
-through this tunnel rather than over the LAN: nothing new is exposed on the
-network, and SSH key auth is the only way in.
+SignalRGB 2.5 exposes UDP, but not TCP, to third-party device plugins. This
+supervisor keeps both required processes running:
 
-The plugin connects to 127.0.0.1:7532 on this PC; that is the local end of the
-forward. MacHost is whatever your ~/.ssh/config calls the Mac.
+  SignalRGB --UDP 7532--> Python bridge --TCP 7532--> SSH --> Mac agent
+
+TCP and UDP can share port 7532. Every endpoint binds to 127.0.0.1, so nothing
+new is exposed on the LAN; SSH key authentication remains the trust boundary.
+MacHost is whatever ~/.ssh/config calls the Mac.
 
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File windows\start-mac-tunnel.ps1
@@ -16,7 +18,7 @@ powershell -ExecutionPolicy Bypass -File windows\start-mac-tunnel.ps1
 .EXAMPLE
 Register it to run at logon (adjust the repo path if you moved it):
 
-    schtasks /create /tn "headless-lights mac tunnel" /sc onlogon /rl limited ^
+    schtasks /create /tn "headless-lights Mac bridge" /sc onlogon /rl limited ^
       /tr "powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\Users\Michel\Projetos\headless-rgb\windows\start-mac-tunnel.ps1"
 #>
 
@@ -28,32 +30,73 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$bridgeScript = Join-Path $scriptDir 'signalrgb-mac-bridge.py'
 
+if (-not (Test-Path $bridgeScript)) {
+    throw "missing UDP-to-TCP bridge: $bridgeScript"
+}
+
+# Do not use the Microsoft Store python.exe alias: it opens the Store instead of
+# executing Python on machines where the alias is enabled.
+$python = Get-ChildItem "$env:LOCALAPPDATA\Programs\Python\Python*\python.exe" `
+    -ErrorAction SilentlyContinue |
+    Sort-Object FullName -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
+if (-not $python) {
+    throw 'Python 3 is required; install it with winget install Python.Python.3.12'
+}
+
+$ssh = (Get-Command ssh.exe -ErrorAction Stop).Source
 $sshArguments = @(
-    '-N'                                  # no remote command, forwarding only
-    '-T'                                  # no pty
-    '-o', 'BatchMode=yes'                 # fail instead of prompting
-    '-o', 'ExitOnForwardFailure=yes'      # do not sit there with a dead forward
+    '-N'
+    '-T'
+    '-o', 'BatchMode=yes'
+    '-o', 'ExitOnForwardFailure=yes'
     '-o', 'ServerAliveInterval=15'
     '-o', 'ServerAliveCountMax=3'
     '-L', "127.0.0.1:${Port}:127.0.0.1:${Port}"
     $MacHost
 )
+$bridgeArguments = @(
+    $bridgeScript,
+    '--listen-port', [string] $Port,
+    '--upstream-port', [string] $Port
+)
 
-Write-Host "tunneling 127.0.0.1:${Port} -> ${MacHost}:127.0.0.1:${Port}"
-Write-Host 'Ctrl+C to stop.'
+Write-Host "SignalRGB UDP 127.0.0.1:${Port} -> TCP/SSH -> ${MacHost}:127.0.0.1:${Port}"
+Write-Host 'Ctrl+C to stop both processes.'
 
-while ($true) {
-    $started = Get-Date
-    try {
-        & ssh @sshArguments
-        $code = $LASTEXITCODE
-    } catch {
-        $code = -1
-        Write-Host "ssh failed to start: $($_.Exception.Message)"
+$bridge = $null
+$tunnel = $null
+try {
+    while ($true) {
+        if ($null -eq $tunnel -or $tunnel.HasExited) {
+            if ($null -ne $tunnel) {
+                Write-Host "ssh exited with $($tunnel.ExitCode); restarting"
+                $tunnel.Dispose()
+            }
+            $tunnel = Start-Process -FilePath $ssh -ArgumentList $sshArguments `
+                -NoNewWindow -PassThru
+            Write-Host "ssh tunnel started (pid $($tunnel.Id))"
+        }
+
+        if ($null -eq $bridge -or $bridge.HasExited) {
+            if ($null -ne $bridge) {
+                Write-Host "UDP bridge exited with $($bridge.ExitCode); restarting"
+                $bridge.Dispose()
+            }
+            $bridge = Start-Process -FilePath $python -ArgumentList $bridgeArguments `
+                -NoNewWindow -PassThru
+            Write-Host "UDP bridge started (pid $($bridge.Id))"
+        }
+
+        Start-Sleep -Seconds $RetrySeconds
     }
-
-    $lifetime = [int] ((Get-Date) - $started).TotalSeconds
-    Write-Host "ssh exited with $code after ${lifetime}s; reconnecting in ${RetrySeconds}s"
-    Start-Sleep -Seconds $RetrySeconds
+} finally {
+    foreach ($process in @($bridge, $tunnel)) {
+        if ($null -ne $process -and -not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
 }

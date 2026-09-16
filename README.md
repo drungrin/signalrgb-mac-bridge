@@ -40,15 +40,15 @@ sleeps or SignalRGB closes.
 1. The Mac agent installed and running. It lives in the `mac-agent/` directory
    of [headless-rgb](https://github.com/drungrin/headless-rgb).
 2. Python 3.11+ on Windows.
-3. The two Windows helpers running:
+3. The Windows transport supervisor running:
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File windows\start-mac-tunnel.ps1
-   python windows\signalrgb-mac-bridge.py
    ```
 
-   The first keeps the SSH TCP forward alive; the second receives SignalRGB
-   datagrams on UDP loopback and forwards them to that TCP tunnel.
+   It starts and restarts both the SSH TCP forward and the Python UDP-to-TCP
+   bridge. The script header includes the command to register it as a logon
+   task.
 
 ## Install
 
