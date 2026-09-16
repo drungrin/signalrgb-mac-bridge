@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The generated K70 tables derive from the OpenLinkHub K70 MAX layout, by way
 // of mac-agent/k70max_layout.h.
+
+import { tcp } from "@SignalRGB/tcp";
+
 //
 // headless-lights: bridge the SignalRGB canvas to the peripherals attached to
 // the Mac.
@@ -32,7 +35,6 @@ export function DeviceType() { return "keyboard"; }
 controller:readonly
 device:readonly
 service:readonly
-tcp:readonly
 LightingMode:readonly
 forcedColor:readonly
 */
@@ -175,6 +177,7 @@ const DEVICES = {
 };
 
 let socket = null;
+let socketConnected = false;
 let config = null;
 let lastSendAt = 0;
 let nextConnectAt = 0;
@@ -236,17 +239,14 @@ export function Shutdown() {
 }
 
 function openSocket() {
-	if (typeof tcp === "undefined") {
-		device.log("this SignalRGB build has no tcp module");
-		return false;
-	}
 	try {
+		socketConnected = false;
 		socket = tcp.createSocket();
+		socket.on("connected", function () {
+			socketConnected = true;
+		});
 		socket.on("error", function (error) {
 			device.log(`socket error: ${error}`);
-			closeSocket();
-		});
-		socket.on("disconnected", function () {
 			closeSocket();
 		});
 		socket.connect(STREAM_HOST, STREAM_PORT);
@@ -267,6 +267,7 @@ function closeSocket() {
 		}
 		socket = null;
 	}
+	socketConnected = false;
 	nextConnectAt = Date.now() + RECONNECT_DELAY;
 }
 
@@ -298,7 +299,7 @@ function isConnected() {
 	if (typeof socket.state === "number" && typeof socket.ConnectedState === "number") {
 		return socket.state === socket.ConnectedState;
 	}
-	return true;
+	return socketConnected;
 }
 
 // Returns one [r,g,b] per wire slot, black for slots with no physical LED.
