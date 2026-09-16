@@ -388,8 +388,16 @@ export function DiscoveryService() {
 		}
 		this.announced = true;
 		for (const model of Object.keys(DEVICES)) {
+			const legacy = service.getController(`headless-lights-${model}`);
+			if (legacy !== undefined) {
+				service.removeController(legacy);
+			}
+
+			// The first development build crashed its engine threads under the
+			// old headless-lights-* ids. SignalRGB quarantines a crashing engine by
+			// id across restarts, so use the repository name as the stable identity.
 			const value = {
-				id: `headless-lights-${model}`,
+				id: `signalrgb-mac-bridge-${model}`,
 				name: DEVICES[model].name,
 				ip: STREAM_HOST,
 				hostname: "localhost",
