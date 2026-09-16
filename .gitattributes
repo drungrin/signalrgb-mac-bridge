@@ -1,0 +1,6 @@
+# SignalRGB reads these on Windows, but they are authored on any platform and
+# a stray CRLF has no business in the diff.
+*.js text eol=lf
+*.qml text eol=lf
+*.md text eol=lf
+LICENSE text eol=lf
