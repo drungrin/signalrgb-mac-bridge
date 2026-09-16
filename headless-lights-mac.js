@@ -432,7 +432,11 @@ class MacBridgeController {
 		// Match SignalRGB's own WLED lifecycle: do not call updateController
 		// before addController has registered this object.
 		this.updateWithValue(value);
-		this.connected = false;
+		// Loopback through the SSH tunnel is the transport boundary; unlike a
+		// discovered Wi-Fi device there is no pairing/link step. The controller
+		// must be connected when announced or SignalRGB persists it without
+		// starting a device engine.
+		this.connected = true;
 		this.announced = false;
 	}
 
@@ -462,7 +466,6 @@ class MacBridgeController {
 		service.saveSetting(this.id, "ip", this.ip);
 		service.updateController(this);
 		service.announceController(this);
-		this.connected = true;
 		this.announced = true;
 		service.updateController(this);
 	}
