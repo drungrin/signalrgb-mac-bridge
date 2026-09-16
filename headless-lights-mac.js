@@ -398,8 +398,15 @@ export function DiscoveryService() {
 			if (existing === undefined) {
 				service.addController(new MacBridgeController(value));
 			} else {
+				// Controllers survive SignalRGB restarts, but device engine threads
+				// do not. Updating a persisted controller is not enough: it must be
+				// announced again so SignalRGB recreates the device and calls
+				// Initialize()/Render().
 				existing.updateWithValue(value);
+				existing.connected = true;
+				existing.deviceCreated = true;
 				service.updateController(existing);
+				service.announceController(existing);
 			}
 		}
 	};
