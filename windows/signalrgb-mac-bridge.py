@@ -57,6 +57,8 @@ class Bridge:
         self.next_connect = 0.0
         self.frames = 0
         self.rejected = 0
+        self.device_frames = [0] * len(LED_COUNTS)
+        self.last_report = time.monotonic()
 
     def connect(self) -> bool:
         now = time.monotonic()
@@ -97,6 +99,19 @@ class Bridge:
         try:
             self.upstream.sendall(frame)
             self.frames += 1
+            self.device_frames[frame[3]] += 1
+            now = time.monotonic()
+            if now - self.last_report >= 10.0:
+                print(
+                    "forwarded "
+                    + " ".join(
+                        f"device{index}={count}"
+                        for index, count in enumerate(self.device_frames)
+                    )
+                    + f" rejected={self.rejected}",
+                    flush=True,
+                )
+                self.last_report = now
             return True
         except OSError as error:
             print(f"TCP connection lost: {error}", file=sys.stderr, flush=True)
